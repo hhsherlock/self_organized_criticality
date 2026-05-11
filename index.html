@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Spiking Neural Network Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .neuron { stroke: #000; }
+        .firing { fill: red; }
+        .silent { fill: rgb(236, 234, 234); }
+        .layer0 { stroke: blue; }
+        .layer1 { stroke: green; }
+        .layer2 { stroke: orange; }
+        .layer3 { stroke: purple; }
+        .pretty-slider {
+            width: 300px;
+            height: 10px;
+            background: linear-gradient(90deg, #6a11cb, #2575fc);
+            border-radius: 5px;
+            outline: none;
+            transition: background 0.3s ease;
+            }
+    </style>
+</head>
+<body>
+
+    <!-- <h2>Live MJPEG Stream</h2>
+    <img id="stream" src="/stream" alt="Simulation stream" style="max-width:100%; height:auto;" /> -->
+
+    <h2>Current Frame: <span id="frame-number">0</span></h2>
+
+    <div><label>u_se_AMPA<input class="slider" type="range" class="pretty-slider"
+        id="u_se_ampa" min="0.1" max="1" value="0.5" step="0.01"></label>
+        <span class="slider-value" id="u_se_ampa_value">0.5</span>
+    </div>
+
+    <div><label>u_se_NMDA<input class="slider" type="range" class="pretty-slider" 
+        id="u_se_nmda" min="0.1" max="1" value="0.5" step="0.01"></label>
+        <span class="slider-value" id="u_se_nmda_value">0.5</span>
+    </div>
+
+    <div><label>u_se_GABA<input class="slider" type="range" class="pretty-slider" 
+        id="u_se_gaba" min="0.1" max="1" value="0.5" step="0.01"></label>
+        <span class="slider-value" id="u_se_gaba_value">0.5</span>
+    </div>
+
+    <div><label>tau_rec_AMPA<input class="slider" type="range" class="pretty-slider" 
+        id="tau_rec_ampa" min="1" max="20" value="5" step="0.1"></label>
+        <span class="slider-value" id="tau_rec_ampa_value">5</span>
+    </div>
+
+    <div><label>tau_rec_NMDA<input class="slider" type="range" class="pretty-slider" 
+        id="tau_rec_nmda" min="1" max="20" value="12" step="0.1"></label>
+        <span class="slider-value" id="tau_rec_nmda_value">12</span>
+    </div>
+
+    <div><label>tau_rec_GABA<input class="slider" type="range" class="pretty-slider" 
+        id="tau_rec_gaba" min="1" max="20" value="12" step="0.1"></label>
+        <span class="slider-value" id="tau_rec_gaba_value">12</span>
+    </div>
+
+    <div><label>tau_rise_AMPA<input class="slider" type="range" class="pretty-slider" 
+        id="tau_rise_ampa" min="2.4" max="20" value="15" step="0.01"></label>
+        <span class="slider-value" id="tau_rise_ampa_value">15</span>
+    </div>
+
+    <div><label>tau_rise_NMDA<input class="slider" type="range" class="pretty-slider" 
+        id="tau_rise_nmda" min="100" max="200" value="150" step="1"></label>
+        <span class="slider-value" id="tau_rise_nmda_value">150</span>
+    </div>
+
+    <div><label>tau_rise_GABA<input class="slider" type="range" class="pretty-slider" 
+        id="tau_rise_gaba" min="7" max="20" value="15" step="0.1"></label>
+        <span class="slider-value" id="tau_rise_gaba_value">15</span>
+    </div>
+
+    <div><label>learning_rate<input class="slider" type="range" class="pretty-slider" 
+        id="learning_rate" min="1" max="100" value="1" step="1"></label>
+        <span class="slider-value" id="learning_rate_value">1</span>
+    </div>
+
+    <div><label>weight_scale<input class="slider" type="range" class="pretty-slider" 
+        id="weight_scale" min="1" max="50" value="1" step="1"></label>
+        <span class="slider-value" id="weight_scale_value">1</span>
+    </div>
+
+    <div>
+    <button type="submit" id="submitBtn">compute</button>
+    <button type="button" id="stopBtn">Stop</button>
+    </div>
+    <svg id="canvas" width="4000" height="3000"></svg>
+    
+    <script>
+        const colorScale = d3.scaleOrdinal()
+            .domain([0, 1])
+            .range(["blue", "red"]);
+
+        const svg = d3.select("#canvas");
+        const socket = new WebSocket("ws://localhost:8000/ws");
+        let neurons = [];
+        let currentStates = [];
+
+        // Slider element and value display
+        const slider = document.getElementById("slider");
+        const sliderValue = document.getElementById("slider-value");
+
+        // // update value display
+        // slider.addEventListener("input", () => {
+        //     const value = slider.value;
+        //     sliderValue.textContent = value;
+        // });
+
+        document.querySelectorAll(".slider").forEach(slider => {
+            slider.addEventListener("input", () => {
+                slider.parentElement.parentElement.querySelector(".slider-value").textContent = slider.value
+            });
+        });
+
+        // listen on the submit button
+        const submitBtn = document.getElementById("submitBtn");
+        submitBtn.addEventListener("click", async () => {
+
+            const data = {
+                'u_se_ampa': parseFloat(u_se_ampa.value),
+                'u_se_nmda': parseFloat(u_se_nmda.value),
+                'u_se_gaba': parseFloat(u_se_gaba.value),
+                'tau_rec_ampa': parseFloat(tau_rec_ampa.value),
+                'tau_rec_nmda': parseFloat(tau_rec_nmda.value),
+                'tau_rec_gaba': parseFloat(tau_rec_gaba.value),
+                'tau_rise_ampa': parseFloat(tau_rise_ampa.value),
+                'tau_rise_nmda': parseFloat(tau_rise_nmda.value),
+                'tau_rise_gaba': parseFloat(tau_rise_gaba.value),
+                'learning_rate': parseFloat(learning_rate.value),
+                'weight_scale': parseFloat(weight_scale.value)
+            }
+            
+            const response = await fetch("/input_params", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            })});
+        
+        // know when socket is connected when not
+        socket.onopen = () => console.log("Socket connected");
+        socket.onclose = () => console.log("Socket disconnected");
+
+        // get the every t step neuron fire states
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.neurons) {
+                neurons = data.neurons;
+                currentStates = Array(neurons.length).fill(0);  // Init all to silent
+                svg.selectAll("circle")
+                    .data(neurons)
+                    .enter()
+                    .append("circle")
+                    .attr("cx", d => d.x)
+                    .attr("cy", d => d.y)
+                    .attr("r", 10)
+                    .attr("fill", () => colorScale(0))
+                    // .attr("class", d => `neuron silent layer${d.layer}`);
+            } else if (data.states) {
+                // Smart diff update:
+                data.states.forEach((state, i) => {
+                    if (state !== currentStates[i]) {
+                        // State changed, update class
+                        d3.select(svg.selectAll("circle").nodes()[i])
+                            .attr("fill", colorScale(state))
+                            // .attr("class", `neuron ${state ? 'firing' : 'silent'} layer${neurons[i].layer}`);
+                        currentStates[i] = state;  // Update local state
+                    }
+                });
+            }
+            // Update frame number if 'frame' is present
+            if (data.frame !== undefined) {
+                document.getElementById("frame-number").textContent = data.frame;
+            }
+        };
+
+        document.getElementById("stopBtn").addEventListener("click", async () => {
+            const response = await fetch("/shutdown", {method: "POST"});
+            // const data = await response.json();
+            // console.log(data.message);
+        });
+    </script> 
+
+</body>
+</html>
+

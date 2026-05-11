@@ -1,0 +1,1 @@
+source /Users/compneuro1/Documents/python_envs/critical/bin/activate
