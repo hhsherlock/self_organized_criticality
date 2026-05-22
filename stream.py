@@ -64,7 +64,7 @@ async def get_params(data: Params):
 
     print(data)
     # fire_data = await run_in_threadpool(simulation)
-    with open("/Users/compneuro1/Documents/projects/SOC/fire_data_hebbian_v.pkl", 'rb') as f:
+    with open("/Users/compneuro1/Documents/projects/SOC/test_fire.pkl", 'rb') as f:
         fire_data = pickle.load(f)
 
     data_event.set()
